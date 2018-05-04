@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -31,6 +32,7 @@ import com.google.android.gms.location.LocationSettingsRequest;
 import com.google.android.gms.location.LocationSettingsResponse;
 import com.google.android.gms.location.LocationSettingsStatusCodes;
 import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.Task;
 import com.google.gson.Gson;
 
@@ -62,7 +64,8 @@ public class MainActivity extends AppCompatActivity {
 
     //API REST
     private OkHttpClient client = new OkHttpClient();
-    private Weather weather;
+    private static Weather weather;
+    private static boolean isRefreshing = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,10 +75,15 @@ public class MainActivity extends AppCompatActivity {
         setupLocation();
     }
 
-    private void showToast(String message){
-        if(message==null || message.isEmpty()) return;
+    private void showToast(final String message){
+        if(message==null || message.isEmpty() || isDestroyed() || isFinishing()) return;
 
-        Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     /**
@@ -98,12 +106,17 @@ public class MainActivity extends AppCompatActivity {
         });
 
         animation = AnimationUtils.loadAnimation(this, R.anim.rotation_circular);
-        startAnimation();
+
+        if(weather!=null && weather.getCurrently()!=null){
+            refreshView();
+        }
+
+        if(isRefreshing){
+            startAnimation();
+        }
     }
 
     private void refreshView(){
-        stopAnimation();
-
         if(weather==null || weather.getCurrently()==null) return;
 
         tvLocation.setText(weather.getTimezone());
@@ -115,6 +128,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void startAnimation(){
         if(ivRefresh!=null){
+            isRefreshing = true;
             ivRefresh.setClickable(false);
             animation.reset();
             ivRefresh.startAnimation(animation);
@@ -122,6 +136,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void stopAnimation(){
+        isRefreshing = false;
+
         if(!isDestroyed() && !isFinishing() && ivRefresh!=null){
             runOnUiThread(new Runnable() {
                 @Override
@@ -189,7 +205,8 @@ public class MainActivity extends AppCompatActivity {
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     checkGPS();
                 } else {
-                    showToast("Necesitas aprobar los permios.");
+                    stopAnimation();
+                    showToast("Debes aprobar los permisos.");
                 }
             }
         }
@@ -235,7 +252,17 @@ public class MainActivity extends AppCompatActivity {
                             // settings so we won't show the dialog.
                             break;
                     }
+
+                    stopAnimation();
+                    showToast("Ocurrio un error con el GPS");
                 }
+            }
+        });
+        result.addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+                stopAnimation();
+                showToast("Ocurrio un error con el GPS");
             }
         });
     }
@@ -251,6 +278,7 @@ public class MainActivity extends AppCompatActivity {
                         break;
                     case Activity.RESULT_CANCELED:
                         // The user was asked to change settings, but chose not to
+                        stopAnimation();
                         showToast("Debes Activar el GPS.");
                         break;
                     default:
@@ -286,7 +314,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onFailure(Call call, IOException e) {
                 stopAnimation();
-                showToast("Ocurrio un error");
+                showToast("Ocurrio un error en la conexión");
             }
 
             @Override
@@ -299,13 +327,14 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
+                                stopAnimation();
                                 refreshView();
                             }
                         });
                     }
                 } else {
                     stopAnimation();
-                    showToast("Ocurrio un error");
+                    showToast("Ocurrio un error en la conexión");
                 }
             }
         });
